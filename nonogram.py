@@ -49,6 +49,7 @@ class Nonogram(object):
             output += "| "
             for clue in self.row_clues[i]: 
                 output += str(clue) + " "
+            if len(self.row_clues[i]) == 0: output += "0"
             output = output + "\n"
         for i in range(self.col_count): 
             output += "- "
@@ -58,7 +59,10 @@ class Nonogram(object):
                 if len(self.col_clues[i]) > j: 
                     output += str(self.col_clues[i][j])
                 else:
-                    output += " "
+                    if j == 0:
+                        output += "0"
+                    else:
+                        output += " "
                 output += " "
             output += "\n"
         return output
@@ -75,6 +79,7 @@ class Nonogram(object):
             output += "| "
             for clue in self.row_clues[i]: 
                 output += str(clue) + " "
+            if len(self.row_clues[i]) == 0: output += "0"
             output = output + "\n"
         for i in range(self.col_count): 
             output += "- "
@@ -84,7 +89,10 @@ class Nonogram(object):
                 if len(self.col_clues[i]) > j: 
                     output += str(self.col_clues[i][j])
                 else:
-                    output += " "
+                    if j == 0:
+                        output += "0"
+                    else:
+                        output += " "
                 output += " "
             output += "\n"
         print(output)
@@ -188,11 +196,13 @@ class Nonogram(object):
 
         population = [self.generate_random_solution() for _ in range(population_size)]
         
+        
         for item in population:
             self.board = self.decode_board(item)
             print("encoding: ")
             print(np.array(item))
             self.show_board()
+        
 
 
     def generate_random_solution(self):

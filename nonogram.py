@@ -1,17 +1,30 @@
 import random
 import copy
 from collections import namedtuple
+
 import numpy as np
+import random
+import matplotlib.pyplot as plt
 
 CheckInfo = namedtuple('CheckInfo', ['matched', 'mismatched', 'violated'])
 
 class Nonogram(object):
-    def __init__(self, row_count:int, col_count: int, fill_rate: float):
+    def __init__(self, row_count=10, col_count=10, fill_rate=0.1,
+                 assigned_answer=None,
+                 population_size=10, max_generation=5, crossover_prob=0.9):
         """
         Args:
             row: Number of rows for the board.
             col: Number of columns for the board.
             fill_rate: Rate of filled cells.
+            assigned_answer: list of numbers (in [0, row_count * col_count]). 
+                If assigned, the board answer will become assigned answer.
+                else, random generate by sample(total, total*fill_rate)
+
+            ----
+            population size: size of populations
+            max generations: number of generations
+            crossover prob: if a random number smaller than this threshold, perform self.crossover
         """
         
         self.row_count = row_count
@@ -22,24 +35,43 @@ class Nonogram(object):
         self.board = [ [0 for _ in range(col_count)] for _ in range(row_count)]
         self.board_answer = copy.deepcopy(self.board)
 
+        self.row_clues = []
+        self.col_clues = []
+        self.col_clues_count = 0
+
+        # for genetic algorithms
+        self.populations = None
+        self.population_size = population_size
+        self.max_generation = max_generation
+        self.crossover_prob = crossover_prob
+        self.max_fitness = np.zeros(self.max_generation + 1)
+
+        # assign answer if assigned in parameters
+        # if not, random generated
         # Initialize board layout
-        samples = random.sample(range(self.total_count), int(self.total_count * fill_rate))
+
+        if(assigned_answer is None):
+            samples = random.sample(range(self.total_count), int(self.total_count * self.fill_rate))
+        else:
+            samples = assigned_answer
+        
         for sample in samples:
             self.board_answer[sample // self.col_count][sample % self.col_count] = 1
 
         self.row_clues = [] * self.row_count
         self.col_clues = [] * self.col_count
         
-        for r in range(row_count):
+        for r in range(self.row_count):
             row = self.__get_row(self.board_answer, r)
             self.row_clues.append(self.__encode_list(row))
         
-        for c in range(col_count):
+        for c in range(self.col_count):
             col = self.__get_col(self.board_answer, c)
             self.col_clues.append(self.__encode_list(col))
 
         # Count total number of col clues
         self.col_clues_count = sum([len(item) for item in self.col_clues])
+
     def __repr__(self) -> str:
         output = "board:\n"
         
@@ -125,6 +157,71 @@ class Nonogram(object):
         
         return CheckInfo(matched, mismatched, violated)
     
+    def calculate_fitness(self, population) -> float:
+        """helper function for fitness"""
+        self.board = self.decode_board(population)
+        return float(self.fitness())
+
+    def fitness(self) -> int:
+        """
+        fitness = -1 * sum( delta(genetic row clue, answer row clue))
+        the more candidate matches the target row clue, the less fitness value get
+
+        for instacne:
+        row   correct wrong     delta
+        0     [3]     [3,1]     |3-3| + |0-1| = 1
+        1     [2,1]   [2,1,1]   |2-2| + |1-1| + |0-1| = 1
+
+        fitness = -sum(delta_i) = -(1+1) = -2
+        """
+        # get decode rules      
+        decoded_clue = [[] for _ in range(self.row_count)]
+        for row in range(self.row_count):
+            current_count = 0
+            is_counting = False
+
+            for col in range(self.col_count):
+                if(self.board[row][col] == 1):
+                    is_counting = True
+                    current_count += 1
+                    # go to next row, push remaining count to list
+                    if(col == self.col_count - 1):
+                        decoded_clue[row].append(current_count)
+
+                elif(is_counting):
+                        decoded_clue[row].append(current_count)
+                        current_count = 0
+                        is_counting = False
+
+        # calculate delta(row clue, decode clue)
+        delta_sum = 0
+        for r in range(self.row_count):
+            decoded_c = decoded_clue[r]
+            target_c = self.row_clues[r]
+
+            # decide smaller length
+            shorter, longer = [], []
+            if(len(decoded_c) < len(target_c)):
+                shorter = decoded_c
+                longer = target_c
+            else:
+                shorter = target_c
+                longer = decoded_c
+
+            i = 0
+            for _ in range(len(shorter)):
+                delta_sum += abs(shorter[i] - longer[i])
+                i += 1
+            for _ in range(len(longer) - len(shorter)):
+                delta_sum += abs(longer[i])
+                i += 1
+
+        return self.row_count * self.col_count -1 * delta_sum
+
+    def record_fitness(self):
+        max_fit = max([self.calculate_fitness(p) for p in self.populations])
+        return max_fit
+
     def set_cell(self, row_num, col_num, value) -> None:
         self.board[row_num][col_num] = value
 
@@ -191,34 +288,111 @@ class Nonogram(object):
 
         return decode
 
-    def solve(self):
-        population_size = 10
+    def roulette_selection(self):
+        # selection: roulette wheel selection with replacement
+        total_fits = sum([self.calculate_fitness(p) for p in self.populations])
+        selection_prob = [self.calculate_fitness(p) / float(total_fits) for p in self.populations]
+        selected_index = np.random.choice(len(self.populations), len(self.populations), 
+                                              p=selection_prob)
 
-        population = [self.generate_random_solution() for _ in range(population_size)]
+        # replacement: generational model (no elitsim)
+        return self.populations[ selected_index ]
+    
+        # only implement size=2...
+    def tournament_selection(self):
+        selected_index = []
+        for _ in range(self.population_size):
+            parents_idx = np.random.choice(len(self.populations), size=2)
+            larger = parents_idx[0]
+            if( self.calculate_fitness(self.populations[parents_idx[0]]) < 
+                self.calculate_fitness(self.populations[parents_idx[1]]) ):
+                larger = parents_idx[1]
+            selected_index.append(larger)
+
+        selected_index = np.array(selected_index)
+        self.populations = self.populations[ selected_index ]
+
+    def crossover(self):
+        # single-point crossover, with prob to determine whether to happen
+        happen = random.randint(0, 1000) / 1000.0
+        if(happen > self.crossover_prob):
+            return
         
+        # for each consecutive pair..
+        for i in range(0, self.population_size, 2):
+            # determine a random crossover point
+            crossover_point = random.randint(1, self.population_size-1)
+            # swap segment..
+            tmp = self.populations[i][crossover_point:].copy()
+            self.populations[i][crossover_point:] = self.populations[i+1][crossover_point:]
+            self.populations[i+1][crossover_point:] = tmp
+
+    def run_generations(self):
+        # including gen 0
+        self.max_fitness[0] = self.record_fitness()
+
+        for g in range(self.max_generation):
+            self.roulette_selection()
+            self.crossover()
+            # new generation
+            self.max_fitness[g+1] = self.record_fitness()
+            
+            print("iter " + str(g+1))
+            # print("encoding:")
+            # for item in self.populations:
+            #     print(np.array(item))
+
+            print(self.max_fitness[g+1])
+        return self.max_fitness
+    
+    def solve(self):
         
-        for item in population:
+        # initial generation
+        self.populations = np.array([self.generate_random_solution() for _ in range(self.population_size)])
+        
+        for item in self.populations:
+            self.board = self.decode_board(item)
+            print("encoding: ")
+            print(np.array(item))
+            print(self.fitness())
+
+        # run genetics
+        self.run_generations()
+
+        print("\n------------------------\n")
+        print("\nresult\n")
+        print("\n------------------------\n")
+        
+        for item in self.populations:
             self.board = self.decode_board(item)
             print("encoding: ")
             print(np.array(item))
             self.show_board()
+            print(self.fitness())
         
-
 
     def generate_random_solution(self):
         solution = [random.randint(0,self.row_count-1) for _ in range(self.col_clues_count)]
         # Ensure that the generated solution satisfies the constraints if needed
-        return solution
-
-
-
-
-    
+        return solution  
 
 if __name__ == "__main__":
-    game = Nonogram(10, 10, 0.1)
+    # this is the showcase in https://github.com/morinim/vita/wiki/nonogram_tutorial
+    game = Nonogram(row_count=9, col_count=8,
+        assigned_answer=[
+            1,2,3,
+            8,9,11,
+            17,18,19,22,23,
+            26,27,30,31,
+            34,35,36,37,38,39,
+            40,42,43,44,45,46,
+            48,49,50,51,52,53,
+            60,
+            67,68
+    ])
     game.show_board()
     game.show_answer()
+    
     game.solve()
     result = game.check()
     print(result)

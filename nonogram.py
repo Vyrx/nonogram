@@ -5,6 +5,7 @@ from collections import namedtuple
 import numpy as np
 import random
 import matplotlib.pyplot as plt
+import time
 
 CheckInfo = namedtuple('CheckInfo', ['matched', 'mismatched', 'violated'])
 
@@ -49,6 +50,7 @@ class Nonogram(object):
         self.max_fitness = np.zeros(self.max_generation + 1)
 
         self.recorded_max_fitness = []
+        self.recorded_best_candidates = []
 
         # assign answer if assigned in parameters
         # if not, random generated
@@ -223,8 +225,16 @@ class Nonogram(object):
         return self.row_count * self.col_count -1 * delta_sum
 
     def record_fitness(self):
-        max_fit = max([self.calculate_fitness(p) for p in self.populations])
+        max_fit = 0
+        record_p = self.populations[0]
+        for p in self.populations:
+            fit_ = self.calculate_fitness(p)
+            if(fit_ > max_fit):
+                max_fit = fit_
+                record_p = p
+        
         self.recorded_max_fitness.append(max_fit)
+        self.recorded_best_candidates.append(record_p)
         return max_fit
 
     def set_cell(self, row_num, col_num, value) -> None:
@@ -373,7 +383,7 @@ class Nonogram(object):
         plt.xlabel("time (generation)")
         plt.ylabel("averaged fitness value")
         plt.title("Result graph")
-        plt.savefig("nonogram_result.png")
+        plt.savefig(f"nonogram_result_{self.population_size}_{self.max_generation}_{time.time()}.png")
         plt.show()
 
     def solve(self):
@@ -384,8 +394,31 @@ class Nonogram(object):
         self.run_generations()
 
         self.plot_result()
+        # for max_fit, best_p in zip(self.recorded_max_fitness, self.recorded_best_candidates):
+        #     print(max_fit)
+        #     self.board = self.decode_board(best_p)
+        #     self.show_board()
 
+        print("\n ---------\n")
+        print("fitness: ", self.recorded_max_fitness[0])
+        self.board = self.decode_board(self.recorded_best_candidates[0])
+        self.show_board()
+        print("----")
+
+        # pick the one with best performance...        
+        fit_ = 0
+        best_p = self.populations[0]
+        for i, m in enumerate(self.recorded_max_fitness):
+            if(m > fit_):
+                fit_ = m
+                best_p = self.recorded_best_candidates[i]
         
+        print("\n ---------\n")
+        print("fitness: ", fit_)
+        self.board = self.decode_board(best_p)
+        self.show_board()
+        print("----")
+
     def generate_random_solution(self):
         solution = [random.randint(0,self.row_count-1) for _ in range(self.col_clues_count)]
         # Ensure that the generated solution satisfies the constraints if needed
@@ -405,11 +438,11 @@ if __name__ == "__main__":
             60,
             67,68
     ],
-    population_size=100, max_generation=int(1e3),
+    population_size=10, max_generation=1000,
     mutation_prob=0.05)
     game.show_board()
     game.show_answer()
     
     game.solve()
-    # result = game.check()
+    # # result = game.check()
     # print(result)

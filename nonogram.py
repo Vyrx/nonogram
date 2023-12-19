@@ -11,7 +11,7 @@ CheckInfo = namedtuple('CheckInfo', ['matched', 'mismatched', 'violated'])
 class Nonogram(object):
     def __init__(self, row_count=10, col_count=10, fill_rate=0.1,
                  assigned_answer=None,
-                 population_size=10, max_generation=5, crossover_prob=0.9):
+                 population_size=10, max_generation=5, crossover_prob=0.9, mutation_prob=0.1):
         """
         Args:
             row: Number of rows for the board.
@@ -25,6 +25,7 @@ class Nonogram(object):
             population size: size of populations
             max generations: number of generations
             crossover prob: if a random number smaller than this threshold, perform self.crossover
+            mutation prob: if a random number smaller than this threshold, perform self.mutation
         """
         
         self.row_count = row_count
@@ -44,7 +45,10 @@ class Nonogram(object):
         self.population_size = population_size
         self.max_generation = max_generation
         self.crossover_prob = crossover_prob
+        self.mutation_prob = mutation_prob
         self.max_fitness = np.zeros(self.max_generation + 1)
+
+        self.recorded_max_fitness = []
 
         # assign answer if assigned in parameters
         # if not, random generated
@@ -220,6 +224,7 @@ class Nonogram(object):
 
     def record_fitness(self):
         max_fit = max([self.calculate_fitness(p) for p in self.populations])
+        self.recorded_max_fitness.append(max_fit)
         return max_fit
 
     def set_cell(self, row_num, col_num, value) -> None:
@@ -299,6 +304,7 @@ class Nonogram(object):
         return self.populations[ selected_index ]
     
         # only implement size=2...
+    
     def tournament_selection(self):
         selected_index = []
         for _ in range(self.population_size):
@@ -320,12 +326,26 @@ class Nonogram(object):
         
         # for each consecutive pair..
         for i in range(0, self.population_size, 2):
-            # determine a random crossover point
-            crossover_point = random.randint(1, self.population_size-1)
+            # swap based on column clue
+            crossover_col = random.randint(1, len(self.col_clues)-2)
+            crossover_point = 0
+            for j in range(crossover_col):
+                crossover_point += len(self.col_clues[j])
+            
             # swap segment..
             tmp = self.populations[i][crossover_point:].copy()
             self.populations[i][crossover_point:] = self.populations[i+1][crossover_point:]
             self.populations[i+1][crossover_point:] = tmp
+
+    def mutation(self):
+        for i in range(self.population_size):
+            # determine perform or not
+            happen = random.randint(0, 1000) / 1000.0
+            if(happen > self.mutation_prob):
+                continue
+
+            mutation_point = random.randint(0, self.col_clues_count-1)
+            self.populations[i][mutation_point] = random.randint(0,self.row_count-1)           
 
     def run_generations(self):
         # including gen 0
@@ -334,43 +354,38 @@ class Nonogram(object):
         for g in range(self.max_generation):
             self.roulette_selection()
             self.crossover()
+            self.mutation()
+
             # new generation
             self.max_fitness[g+1] = self.record_fitness()
             
             print("iter " + str(g+1))
+            print(self.max_fitness[g+1])
             # print("encoding:")
             # for item in self.populations:
             #     print(np.array(item))
 
-            print(self.max_fitness[g+1])
         return self.max_fitness
     
+    def plot_result(self):
+        xs = list(range(self.max_generation + 1))
+        plt.plot(xs, self.recorded_max_fitness)
+        plt.xlabel("time (generation)")
+        plt.ylabel("averaged fitness value")
+        plt.title("Result graph")
+        plt.savefig("nonogram_result.png")
+        plt.show()
+
     def solve(self):
-        
         # initial generation
         self.populations = np.array([self.generate_random_solution() for _ in range(self.population_size)])
-        
-        for item in self.populations:
-            self.board = self.decode_board(item)
-            print("encoding: ")
-            print(np.array(item))
-            print(self.fitness())
 
         # run genetics
         self.run_generations()
 
-        print("\n------------------------\n")
-        print("\nresult\n")
-        print("\n------------------------\n")
-        
-        for item in self.populations:
-            self.board = self.decode_board(item)
-            print("encoding: ")
-            print(np.array(item))
-            self.show_board()
-            print(self.fitness())
-        
+        self.plot_result()
 
+        
     def generate_random_solution(self):
         solution = [random.randint(0,self.row_count-1) for _ in range(self.col_clues_count)]
         # Ensure that the generated solution satisfies the constraints if needed
@@ -389,10 +404,12 @@ if __name__ == "__main__":
             48,49,50,51,52,53,
             60,
             67,68
-    ])
+    ],
+    population_size=100, max_generation=int(1e3),
+    mutation_prob=0.05)
     game.show_board()
     game.show_answer()
     
     game.solve()
-    result = game.check()
-    print(result)
+    # result = game.check()
+    # print(result)

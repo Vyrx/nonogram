@@ -311,6 +311,7 @@ class Nonogram(object):
                                               p=selection_prob)
 
         # replacement: generational model (no elitsim)
+        self.populations = self.populations[ selected_index ]
         return self.populations[ selected_index ]
     
         # only implement size=2...
@@ -381,9 +382,9 @@ class Nonogram(object):
         xs = list(range(self.max_generation + 1))
         plt.plot(xs, self.recorded_max_fitness)
         plt.xlabel("time (generation)")
-        plt.ylabel("averaged fitness value")
+        plt.ylabel("maximum fitness value")
         plt.title("Result graph")
-        plt.savefig(f"nonogram_result_{self.population_size}_{self.max_generation}_{time.time()}.png")
+        plt.savefig(f"results/nonogram_result_{self.population_size}_{self.max_generation}_{time.time()}.png")
         plt.show()
 
     def solve(self):
@@ -438,7 +439,7 @@ if __name__ == "__main__":
             60,
             67,68
     ],
-    population_size=10, max_generation=1000,
+    population_size=500, max_generation=100,
     mutation_prob=0.05)
     game.show_board()
     game.show_answer()
